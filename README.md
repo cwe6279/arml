@@ -1,16 +1,32 @@
 # ARML 2.1 — Agent Response Markup Language
 
-ARML is a small markup that a model writes and a harness parses: reasoning,
-tool calls and the answer to the user, each in its own block. Use it when you
-build your own agent harness, and log your turns in the shared format below, so
-that everyone's real-world lessons can be pooled to train smaller local models
-to be better at agent tasks and conversation.
+ARML is a markup language for what an LLM writes when it acts as an agent: its
+reasoning, its tool calls and its answer, each in its own block. It is designed
+for building agent harnesses on: the model writes ARML, your harness parses it
+and acts.
+
+```
+<think>They want the total with tax. I need exact math.</think>
+<tool name="calculate">{"expression": "84.50 * 1.08"}</tool>
+```
+```
+<output>That comes to $91.26 with tax.</output>
+```
 
 It is meant to be parsed by regular expressions, the same way every time, and to
-be written the same way every time. The second half matters as much as the
-first: a model learns exactly what it is shown, forgiven mistakes included.
+be written the same way every time, by any model.
 
-Plain Python, no dependencies, Python 3.9+:
+**Why:** so that agent logs from local models are comparable and can be pooled
+to train better small models for agent work and conversation. If everyone who
+builds on a local model writes the same markup and logs turns in the same
+format, with what happened next (the tool worked, the user had to correct it),
+those logs become a shared dataset of real lessons. That is why the language is
+strict: a model learns exactly what it is shown, forgiven mistakes included.
+
+This repository is the language and the parts every harness needs: the spec
+(below), a batch and a streaming parser, a lint, a canonical form, the prompt
+rules that teach a model to write ARML, and the shared log format. Plain Python,
+no dependencies, Python 3.9+:
 
 ```bash
 pip install git+https://github.com/cwe6279/arml.git
@@ -91,6 +107,16 @@ examples = [ex for rec in read("arml-turns.jsonl") if (ex := training_example(re
 The outcome is what turns logs into lessons. Lint can only say a response was
 well-formed, not that it was right. A clean reply that the user cut off because
 it read its plan aloud is exactly what a small model needs to learn from.
+
+## Share your logs
+
+The point of the shared format is pooling. When you have turns worth sharing:
+
+1. Read the file before you publish it. Redaction catches emails, phone numbers,
+   keys and card-like numbers, not names, addresses or anything else private.
+2. Publish the `.jsonl` as a dataset (Hugging Face works well) tagged `arml`,
+   and say which model and harness produced it.
+3. Keep the failed turns in. Their lint codes and outcomes are the lessons.
 
 ## 1. Grammar
 

@@ -8,6 +8,7 @@ version = "2.1.0"
 description = "Agent Response Markup Language: a regex-parseable markup for agent responses, with a streaming parser, lint, and a shared turn-log format for training smaller models"
 readme = "README.md"
 requires-python = ">=3.9"
+license = {text = "MIT"}
 dependencies = []
 
 [project.urls]
