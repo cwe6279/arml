@@ -36,6 +36,10 @@ or copy the `arml/` folder into your project. Tests: `pytest tests/`.
 
 ## Build a harness with ARML
 
+A complete working example is [examples/minimal_harness.py](examples/minimal_harness.py):
+about 100 lines, no dependencies, for any local server with the OpenAI-compatible
+chat API (llama.cpp, LM Studio, Ollama, vLLM). It does the five steps below.
+
 **1. Teach the model the format.** `format_rules()` gives the ARML section of
 a system prompt; your own instructions go around it.
 
