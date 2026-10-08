@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arml"
+version = "2.1.0"
+description = "Agent Response Markup Language: a regex-parseable markup for agent responses, with a streaming parser, lint, and a shared turn-log format for training smaller models"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/cwe6279/arml"
+
+[tool.setuptools]
+packages = ["arml"]
