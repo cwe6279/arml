@@ -141,3 +141,69 @@ def test_generate_writes_the_log_the_training_file_and_resumes(tmp_path):
 def test_a_failed_teacher_session_is_logged_but_not_trained_on(tmp_path):
     st = G.generate(12, 2, lambda s: (lambda messages: "I think it's fine."), "bad", str(tmp_path), quiet=True)
     assert st["turns_logged"] == 12 and st["examples"] == 0 and st["codes"] == {"NO_BLOCKS": 12}
+
+
+def test_a_leading_the_does_not_matter_and_chain_requests_read_well():
+    s = next(x for x in (G.scenario(1, i) for i in range(800))
+             if x["kind"] == "lookup" and any(str(a).startswith("the ") for _, args in x["need"] for a in args.values()))
+    name, args = s["need"][0]
+    (pname, value), = args.items()
+    bare = value[len("the "):]
+    tool = next(t for t in s["tools"] if t["name"] == name)
+    assert not tool["run"]({pname: bare}).startswith("error:")          # the fake tool takes "airport"
+    assert G.check(s, [(name, {pname: bare})], " ".join(s["answer_has"]))[0]   # and so does the checker
+    chains = [x["ask"] for x in (G.scenario(2, i) for i in range(1500)) if x["kind"] == "chain"]
+    assert chains and not [a for a in chains if " it with " in a or a.startswith("Put it") or a.startswith("Save it")]
+
+
+def test_arguments_match_by_meaning_not_by_spelling():
+    ok = G._arg_ok
+    assert ok("garage door", "garage") and ok("unlocked", "unlock") and ok("the airport", "Airport")
+    assert not ok("front door", "back door") and not ok("kitchen", "") and not ok("hallway", "kitchen")
+    assert ok(("words", "the great demo"), "Great demo!") and ok(("words", "call the plumber"), "Call plumber")
+    assert not ok(("words", "call the plumber"), "water the plants")
+    assert ok(("has", "B14"), "Flight status: gate B14") and not ok(("has", "B14"), "gate B12")
+    assert ok(21, "21") and ok(21, 21.0) and not ok(21, "twenty-one")
+
+
+def test_tools_that_change_mid_conversation():
+    from arml import format_rules
+    def first(kind):
+        return next(s for s in (G.scenario(1, i) for i in range(3000)) if s["kind"] == kind)
+
+    s = first("removed")
+    old = next(iter(s["removed"]))
+    assert s["notice"].startswith("TOOLS CHANGED") and old in s["notice"] and old not in s["live"]
+    assert old in G.system_prompt(s)                                  # the system prompt is not rewritten
+    assert s["history"][1]["content"].startswith(f'<tool name="{old}">')
+    call_old = f'<tool name="{old}">{s["history"][1]["content"].split(">", 1)[1].split("</tool>")[0]}</tool>'
+    r = G.run_session(s, scripted(call_old, "<output>Here it is.</output>"), "m")
+    assert r["why"] == f"called {old}, which the runtime had removed"
+    assert G.run_session(s, scripted(f"<output>{s['gold']}</output>"), "m")["passed"]
+
+    s = first("renamed")
+    old, (new, args) = next(iter(s["removed"])), s["need"][0]
+    assert f"{old} is now {new}" in s["notice"] and new in s["live"] and new not in G.system_prompt(s)
+    r = G.run_session(s, scripted(f'<tool name="{new}">{json.dumps(args)}</tool>',
+                                  f"<output>{s['answer_has'][0]}</output>"), "m")
+    assert r["passed"]
+    # the session the model sees: system, the earlier exchange, then the notice with the request
+    seen = r["records"][0].context
+    assert [m["role"] for m in seen] == ["user", "assistant", "user", "assistant", "user"]
+    assert seen[-1]["content"].startswith("TOOLS CHANGED") and seen[-1]["content"].endswith(s["ask"])
+
+    s = first("added")
+    name, args = s["need"][0]
+    assert name in s["notice"] and name not in G.system_prompt(s) and name in s["live"]
+
+    s = first("tool error")
+    name, args = s["need"][0]
+    call = f'<tool name="{name}">{json.dumps(args)}</tool>'
+    good = G.run_session(s, scripted(call, f"<output>{s['gold']}</output>"), "m")
+    assert good["passed"] and all(rec.good(strict=True) for rec in good["records"])   # the error was expected
+    assert G.run_session(s, scripted(call, call, f"<output>{s['gold']}</output>"), "m")["passed"]  # one retry
+    r = G.run_session(s, scripted(call, call, call, f"<output>{s['gold']}</output>"), "m")
+    assert r["why"] == f"called {name} 3 times after it failed"
+    lie = s["answer_not"][0] if s["answer_not"] else None
+    if lie:
+        assert not G.run_session(s, scripted(call, f"<output>It is {lie}.</output>"), "m")["passed"]

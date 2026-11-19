@@ -49,7 +49,7 @@ from .parser import (
 )
 from .stream import StreamParser, Event
 from .lint import lint, is_clean, canonical, Issue
-from .prompt import format_rules
+from .prompt import format_rules, tools_notice
 from .record import TurnRecord
 
 __version__ = "2.1.0"
@@ -73,6 +73,7 @@ __all__ = [
 
     # Building a harness: prompt rules and the shared turn-log format
     "format_rules",
+    "tools_notice",
     "TurnRecord",
 
     # Types

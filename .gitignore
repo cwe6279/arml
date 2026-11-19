@@ -9,3 +9,4 @@ venv/
 *.jsonl
 datagen/out/
 bench/results/
+datagen/out-*/

@@ -31,7 +31,7 @@ Code builds every scenario, not a model, so each one has a known right answer:
   email, taxis).
   Each tool's name and parameter names vary (`next_bus(stop)`, `busArrival(stopName)`), so a
   model learns to read the tool list it is given rather than memorise one.
-- **A request** of one of eight kinds:
+- **A request** of one of twelve kinds:
 
   | Kind | Example | Right behaviour |
   |---|---|---|
@@ -43,9 +43,17 @@ Code builds every scenario, not a model, so each one has a known right answer:
   | missing | "Change the thermostat." | a question back, no call |
   | impossible | a request no tool in the list can do | say so, call nothing |
   | unknown | a flight number the tool has no data for | look it up, then say nothing was found instead of inventing |
+  | removed | after an earlier lookup, the runtime's notice removes that tool; "And Oslo?" | don't call it from memory; say it's no longer available |
+  | renamed | the notice renames the tool used earlier | use the new name, never the old one |
+  | added | the notice adds a tool the request needs | use it, though the system prompt never listed it |
+  | tool error | the tool says its service isn't responding | try at most once more, then say so without inventing a result |
+
+  The last four start partway through a conversation: an earlier exchange is already in the
+  context, and the system prompt still lists the tools as they were at the start. Tool
+  changes arrive as a `tools_notice()` message, as the main README describes.
 
 - **Distractors:** the toolset always holds tools the request doesn't need.
-- **One of six identity lines** opens the system prompt, followed by `format_rules(tools)`.
+- **One of ten identity lines** opens the system prompt, followed by `format_rules(tools)`.
 
 The tools are fakes with fixed data, so nothing real happens.
 

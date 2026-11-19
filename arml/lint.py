@@ -66,6 +66,7 @@ DOING_TYPES = {BlockType.TOOL, BlockType.CODE, BlockType.VALIDATE}
 RESERVED_MARKERS = [
     r"\(\s*Event\s*:", r"\bstep\s+\d+\s+(?:done|complete[d]?|failed)\b",
     r"\[\s*(?:tool|observation|result)\b[^\]]*\]", r"^\s*Observation\s*:",
+    r"\bTOOLS CHANGED\b",                  # the runtime's notice (prompt.tools_notice)
 ]
 _ANNOUNCE_RE = re.compile(
     r"\b(?:let me|i'll|i will|i'm going to|i am going to)\s+(?:now\s+|just\s+|quickly\s+)?"

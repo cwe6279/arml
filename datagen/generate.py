@@ -36,7 +36,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from arml import format_rules, lint, parse                               # noqa: E402
+from arml import format_rules, lint, parse, tools_notice                 # noqa: E402
 from arml.record import TurnRecord, append, read, training_example       # noqa: E402
 
 # The benchmark's tools. Nothing generated here may use these names.
@@ -193,7 +193,7 @@ LOOKUPS: List[dict] = [
          unknown=["the moon", "Narnia"],
          asks=["How long to drive to {e}?", "What's the drive to {e} like right now?", "How many minutes to {e} in traffic?",
                "Travel time to {e}?"], vague="How long will the drive take?", question="Where to?"),
-    dict(key="plant", names=["soil_moisture", "plant_sensor", "moisture_level"], params=["plant", "pot"],
+    dict(key="plant", names=["soil_moisture", "plant_sensor", "moisture_level"], params=["plant", "plant_name"],
          desc="Soil moisture of a plant, in percent.", noun="soil moisture", numeric=True,
          data={"fern": ("moisture 72 percent", "72"), "basil": ("moisture 19 percent", "19"), "monstera": ("moisture 44 percent", "44"),
                "lemon tree": ("moisture 33 percent", "33")}, unknown=["cactus", "bonsai"],
@@ -201,8 +201,8 @@ LOOKUPS: List[dict] = [
          vague="Do the plants need water?", question="Which plant?"),
     dict(key="loyalty", names=["loyalty_points", "rewards_balance", "points_balance"], params=["program", "programme"],
          desc="Points balance in one of the user's loyalty programmes.", noun="points balance", numeric=True,
-         data={"airline": ("18450 points", "18450"), "coffee": ("320 points", "320"), "hotel": ("7600 points", "7600"),
-               "grocery": ("1275 points", "1275")}, unknown=["casino", "cruise"],
+         data={"Aerolux airline": ("18450 points", "18450"), "BeanClub coffee": ("320 points", "320"), "StayWell hotel": ("7600 points", "7600"),
+               "FreshCart grocery": ("1275 points", "1275")}, unknown=["LuckyStar casino", "OceanBlue cruise"],
          asks=["How many {e} points do I have?", "What's my {e} rewards balance?", "Check my {e} points.",
                "Points left on {e}?"], vague="How many points do I have?", question="Which programme?"),
     dict(key="water", names=["water_temperature", "sea_temperature", "lake_temperature"], params=["beach", "spot"],
@@ -387,7 +387,7 @@ ACTIONS: List[dict] = [
          result="taxi to {to} at {time}", vague="Book me a taxi.", question="Where to, and when?"),
     dict(key="pause", names=["pause_subscription", "suspend_plan", "hold_subscription"],
          desc="Pause one of the user's subscriptions for some weeks.",
-         params=[dict(key="service", names=["service", "subscription"], type="string", pool=["meal kit", "gym", "streaming", "magazine"]),
+         params=[dict(key="service", names=["service", "subscription"], type="string", pool=["FreshBox meal kit", "PulseFit gym", "Streamio", "Field Notes magazine"]),
                  dict(key="weeks", names=["weeks", "duration_weeks"], type="number", pool=[1, 2, 4, 6])],
          asks=["Pause my {service} subscription for {weeks} weeks.", "Put the {service} plan on hold for {weeks} weeks.",
                "Suspend {service} for {weeks} weeks.", "Stop {service} for {weeks} weeks please."],
@@ -437,7 +437,7 @@ COMPARE_ASKS = {
     "meter": "Which circuit has used more energy today, {a} or {b}?",
 }
 CHAIN_ASKS = ["Look up the {noun} for {e} and {sink}.", "Check the {noun} of {e}, then {sink}.",
-              "{sink_cap} with the current {noun} for {e}.", "Find the {noun} for {e} and {sink} so I have it."]
+              "Get the current {noun} for {e} and {sink}.", "Find the {noun} for {e} and {sink} so I have it."]
 SINK_PHRASE = {"note": "save it in a note", "post": "post it to the {channel} channel",
                "reminder": "put it in a reminder for {time}", "ticket_new": "open a {priority} priority ticket with it as the title",
                "email": "email it to {to}", "calendar_hold": "put it in my diary on {day} at {start}",
@@ -503,12 +503,19 @@ IDENTITIES = [
 
 ]
 KINDS = [("lookup", 22), ("action", 18), ("chain", 14), ("no tool", 14), ("compare", 10),
-         ("missing", 10), ("impossible", 6), ("unknown", 6)]
+         ("missing", 10), ("impossible", 6), ("unknown", 6),
+         # the tools change during the conversation, or one stops answering
+         ("removed", 5), ("renamed", 5), ("added", 5), ("tool error", 5)]
+# Kinds where a tool result that is an error is the expected outcome, not a mistake.
+ERROR_EXPECTED = {"unknown", "tool error"}
 ASKS_RE = r"\?|\b(provide|specify|tell me|let me know|which|who|whom|what|where|when|need)\b"
 
 
 def _norm(value: Any) -> str:
-    return re.sub(r"[^a-z0-9.]+", "", str(value).lower())
+    """Lowercase, a leading "the" dropped, only letters, digits and dots: "The Airport" and
+    "airport" are the same place to a tool and to the checker."""
+    text = re.sub(r"^\s*the\s+", "", str(value).lower())
+    return re.sub(r"[^a-z0-9.]+", "", text)
 
 
 def _camel(name: str) -> str:
@@ -570,6 +577,10 @@ def scenario(seed: int, index: int) -> dict:
         used_l, used_a = (lookups[:1], []) if rng.random() < 0.4 else ([], actions[:1])
     elif kind == "impossible":
         absent = rng.choice(lookups + actions)
+    elif kind in ("removed", "renamed", "tool error"):
+        used_l = lookups[:1]
+    elif kind == "added":
+        used_l, absent = lookups[1:2], lookups[0]       # [1] is used earlier; [0] arrives with the notice
     # distractors: other concepts, so the model has to choose
     pool = [c for c in lookups + actions if c not in used_l and c not in used_a and c is not absent]
     extra = rng.sample(pool, rng.randint(2, 6))
@@ -579,7 +590,18 @@ def scenario(seed: int, index: int) -> dict:
     need: List[Tuple[str, Dict[str, Any]]] = []
     forbid: set = set()
     s = dict(id=f"gen-{seed}-{index}", kind=kind, identity=rng.choice(IDENTITIES), tools=tools,
-             answer_has=[], answer_not=[], answer_re=None, must_ask=False, any_answer=False, steps=[])
+             answer_has=[], answer_not=[], answer_re=None, must_ask=False, any_answer=False, steps=[],
+             history=[], notice="", live={t["name"]: t["run"] for t in tools}, removed=set(), max_calls={})
+
+    def earlier(concept, entity):
+        """An exchange already in the conversation: a lookup that worked, and its answer."""
+        t = by_key[concept["key"]]
+        args = {t["pname"]: entity}
+        s["history"] += [{"role": "user", "content": rng.choice(concept["asks"]).format(e=entity)},
+                         {"role": "assistant", "content": f'<tool name="{t["name"]}">{json.dumps(args)}</tool>'},
+                         {"role": "user", "content": f"Result of {t['name']}: {t['run'](args)}"},
+                         {"role": "assistant", "content": f"<output>The {concept['noun']} for {entity}: "
+                                                          f"{concept['data'][entity][0]}.</output>"}]
 
     def look(concept, entity):
         t = by_key[concept["key"]]
@@ -589,9 +611,10 @@ def scenario(seed: int, index: int) -> dict:
 
     def act(concept, values):
         t = by_key[concept["key"]]
-        args = {t["pnames"][k]: v for k, v in values.items()}
+        free = {p["key"] for p in concept["params"] if p.get("free")}
+        args = {t["pnames"][k]: (("words", v) if k in free else v) for k, v in values.items()}
         need.append((t["name"], args))
-        s["steps"].append((t["name"], args))
+        s["steps"].append((t["name"], {t["pnames"][k]: v for k, v in values.items()}))   # what the oracle writes
         return t
 
     if kind == "lookup":
@@ -630,7 +653,7 @@ def scenario(seed: int, index: int) -> dict:
         act(sink, values)
         need[-1] = (need[-1][0], {**need[-1][1], by_key[sink["key"]]["pnames"][free]: ("has", c["data"][e][1])})
         phrase = SINK_PHRASE[sink["key"]].format(**values)
-        s.update(ask=rng.choice(CHAIN_ASKS).format(noun=c["noun"], e=e, sink=phrase, sink_cap=phrase[0].upper() + phrase[1:]),
+        s.update(ask=rng.choice(CHAIN_ASKS).format(noun=c["noun"], e=e, sink=phrase),
                  any_answer=True, gold="Done.")
     elif kind == "no tool":
         ask, regex, gold = rng.choice(NO_TOOL)
@@ -647,9 +670,56 @@ def scenario(seed: int, index: int) -> dict:
         else:
             ask = rng.choice(absent["asks"]).format(**{p["key"]: rng.choice(p["pool"]) for p in absent["params"]})
         s.update(ask=ask, any_answer=True, gold="I can't do that here: I don't have a tool for it.")
-    s.update(need=need, forbid=forbid, actions={t["name"] for t in tools if t["kind"] == "action"},
-             names={t["name"] for t in tools})
-    assert not (s["names"] & HELD_OUT_TOOLS)
+    elif kind in ("removed", "renamed"):
+        c = used_l[0]
+        e1, e2 = rng.sample(list(c["data"]), 2)
+        earlier(c, e1)
+        old = by_key[c["key"]]
+        ask2 = rng.choice(["And {e}?", "Now check {e}.", "What about {e}?", "Same for {e}, please."]).format(e=e2)
+        del s["live"][old["name"]]
+        s["removed"] = {old["name"]}
+        if kind == "removed":
+            s["notice"] = tools_notice(removed=[old["name"]])
+            forbid = {t["name"] for t in tools}
+            s.update(ask=ask2, any_answer=False, answer_not=[c["data"][e2][1]] if len(c["data"][e2][1]) > 2 else [],
+                     gold=f"I can't check that any more: the {c['noun']} tool has been removed.")
+        else:
+            taken = {t["name"] for t in tools} | HELD_OUT_TOOLS
+            new = next((style(n) for n in rng.sample(c["names"], len(c["names"])) for style in (str, _camel)
+                        if style(n) not in taken), None) or old["name"] + "_v2"
+            s["live"][new] = old["run"]
+            s["notice"] = tools_notice(renamed={old["name"]: new})
+            need.append((new, {old["pname"]: e2}))
+            s["steps"].append((new, {old["pname"]: e2}))
+            s.update(ask=ask2, answer_has=[c["data"][e2][1]], gold=f"The {c['noun']} for {e2}: {c['data'][e2][0]}.")
+    elif kind == "added":
+        first, c = used_l[0], absent
+        earlier(first, rng.choice(list(first["data"])))
+        newt = _instantiate(rng, c, "lookup")
+        if newt["name"] in {t["name"] for t in tools}:
+            newt["name"] += "_new"
+        s["live"][newt["name"]] = newt["run"]
+        s["notice"] = tools_notice(added=[{"name": newt["name"], "description": newt["desc"], "parameters": newt["params"]}])
+        e = rng.choice(list(c["data"]))
+        need.append((newt["name"], {newt["pname"]: e}))
+        s["steps"].append((newt["name"], {newt["pname"]: e}))
+        s.update(ask=rng.choice(c["asks"]).format(e=e), answer_has=[c["data"][e][1]],
+                 gold=f"The {c['noun']} for {e}: {c['data'][e][0]}.")
+        s["added_tool"] = newt
+    elif kind == "tool error":
+        c = used_l[0]
+        e = rng.choice(list(c["data"]))
+        broken = by_key[c["key"]]
+        s["live"][broken["name"]] = lambda p, noun=c["noun"]: f"error: the {noun} service is not responding; try again later"
+        look(c, e)
+        s["max_calls"] = {broken["name"]: 2}             # one retry is fine; more is a loop
+        s.update(ask=rng.choice(c["asks"]).format(e=e),
+                 answer_not=[v[1] for v in c["data"].values() if len(v[1]) > 2],
+                 gold=f"The {c['noun']} service isn't responding right now, so I can't check {e}. Try again in a little while.")
+    s.update(need=need, forbid=forbid,
+             actions={t["name"] for t in tools if t["kind"] == "action"} & set(s["live"]),
+             names=set(s["live"]))
+    assert not ((s["names"] | {t["name"] for t in tools}) & HELD_OUT_TOOLS)
     return s
 
 
@@ -662,15 +732,29 @@ def system_prompt(s: dict) -> str:
 
 
 # ── checking a session ──────────────────────────────────────────────────────
+_STOP = {"the", "a", "an", "to", "for", "of", "on", "in", "at", "is", "it", "my", "and", "with"}
+
+
+def _words(text: Any) -> List[str]:
+    return [w for w in re.findall(r"[a-z0-9]+", str(text).lower()) if w not in _STOP]
+
+
 def _arg_ok(expected: Any, actual: Any) -> bool:
-    if isinstance(expected, tuple):                     # ("has", token): free text that must carry it
+    """Whether a call's argument is right. Names match when one contains the other, so
+    "garage" is the garage door and "unlock" is unlocked, but "back door" is not the front
+    door. Free text is right when it keeps most of the words asked for."""
+    if isinstance(expected, tuple) and expected[0] == "has":   # free text that must carry a fact
         return str(expected[1]).lower() in str(actual).lower()
+    if isinstance(expected, tuple) and expected[0] == "words":
+        want, got = _words(expected[1]), set(_words(actual))
+        return bool(want) and sum(w in got for w in want) / len(want) >= 0.6
     if isinstance(expected, (int, float)):
         try:
             return float(actual) == float(expected)
         except (TypeError, ValueError):
             return False
-    return _norm(expected) in _norm(actual) if _norm(expected) else False
+    e, a = _norm(expected), _norm(actual)
+    return bool(e and a) and (e in a or (len(a) >= 3 and a in e))
 
 
 def check(s: dict, calls: List[Tuple[str, dict]], final: str) -> Tuple[bool, str]:
@@ -683,6 +767,12 @@ def check(s: dict, calls: List[Tuple[str, dict]], final: str) -> Tuple[bool, str
             return False, f"no correct {name} call"
         left.pop(hit)
     made = [n for n, _ in calls]
+    gone = [n for n in made if n in s.get("removed", ())]
+    if gone:
+        return False, f"called {gone[0]}, which the runtime had removed"
+    for tool, most in s.get("max_calls", {}).items():
+        if made.count(tool) > most:
+            return False, f"called {tool} {made.count(tool)} times after it failed"
     unknown = [n for n in made if n not in s["names"]]
     if unknown:
         return False, f"invented a tool: {unknown[0]}"
@@ -729,9 +819,10 @@ def oracle(s: dict, rng: random.Random) -> Callable[[List[dict]], str]:
     """The known-right session, written as ARML. No model: the calls come from the scenario and
     the answer is a template."""
     steps = list(s["steps"])
+    before = sum(1 for m in s.get("history", []) if m["role"] == "assistant")
 
     def chat(messages):
-        done = sum(1 for m in messages if m["role"] == "assistant")
+        done = sum(1 for m in messages if m["role"] == "assistant") - before
         think = "<think>{}</think>\n" if rng.random() < 0.5 else "{0:.0}"
         if done < len(steps):
             name, args = steps[done]
@@ -742,9 +833,10 @@ def oracle(s: dict, rng: random.Random) -> Callable[[List[dict]], str]:
 
 
 def run_session(s: dict, chat, model: str, max_steps: int = 6) -> dict:
-    system = system_prompt(s)
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": s["ask"]}]
-    fakes = {t["name"]: t["run"] for t in s["tools"]}
+    system = system_prompt(s)                    # the tools as they were at the start, never rewritten
+    ask = (s["notice"] + "\n\n" + s["ask"]) if s.get("notice") else s["ask"]
+    messages = [{"role": "system", "content": system}, *s.get("history", []), {"role": "user", "content": ask}]
+    fakes = s["live"]
     calls, records, codes, final = [], [], [], ""
     for step in range(1, max_steps + 1):
         raw = chat(messages)
@@ -777,7 +869,7 @@ def run_session(s: dict, chat, model: str, max_steps: int = 6) -> dict:
         passed, why = False, "still calling tools after the step limit"
     # A lookup that fails because the thing does not exist is the right call in an "unknown" scenario.
     for rec in records:
-        if s["kind"] == "unknown" and rec.outcome.get("tool_ok") is False and passed:
+        if s["kind"] in ERROR_EXPECTED and rec.outcome.get("tool_ok") is False and passed:
             rec.outcome["tool_ok"] = True
             rec.outcome.pop("tool_error", None)
         rec.set_outcome(task_ok=passed, **({} if passed else {"note": why}))
@@ -788,6 +880,10 @@ def run_session(s: dict, chat, model: str, max_steps: int = 6) -> dict:
 def describe(s: dict) -> str:
     lines = [f"{s['id']}  [{s['kind']}]  {s['ask']}",
              "  tools: " + ", ".join(f"{t['name']}({', '.join(t['params'])})" for t in s["tools"])]
+    if s.get("history"):
+        lines.append(f"  earlier: {s['history'][0]['content']}  ->  {s['history'][1]['content']}")
+    if s.get("notice"):
+        lines.append("  notice: " + " | ".join(l for l in s["notice"].splitlines()[1:] if l.strip()))
     for name, args in s["need"]:
         lines.append(f"  needs: {name} {json.dumps({k: (v[1] if isinstance(v, tuple) else v) for k, v in args.items()})}")
     if s["forbid"]:

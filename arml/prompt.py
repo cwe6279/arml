@@ -32,6 +32,35 @@ def tool_list(tools: Iterable[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+NOTICE_HEADER = "TOOLS CHANGED (from the runtime)."
+
+
+def tools_notice(added: Iterable[Dict[str, Any]] = (), removed: Iterable[str] = (),
+                 renamed: Optional[Dict[str, str]] = None) -> str:
+    """The message a harness sends when the tools change during a conversation.
+
+    The system prompt, with format_rules(), stays exactly as it was: a local server reuses its
+    prompt cache only while the start of the prompt is unchanged, and rewriting the tool list
+    there would make it reprocess the whole conversation. Send this instead, as the runtime
+    (in the same role as tool results), before the next request.
+
+        tools_notice(added=[{"name": "search", "description": "...", "parameters": {...}}],
+                     removed=["old_tool"], renamed={"get_quote": "stock_price"})
+    """
+    added, removed, renamed = list(added), list(removed), dict(renamed or {})
+    if not (added or removed or renamed):
+        raise ValueError("a notice needs at least one change")
+    parts = [NOTICE_HEADER + " This replaces what AVAILABLE TOOLS said about these tools."]
+    if added:
+        parts.append("Added:\n" + tool_list(added))
+    if renamed:
+        parts.append("Renamed (same parameters; use only the new name):\n"
+                     + "\n".join(f"- {old} is now {new}" for old, new in renamed.items()))
+    if removed:
+        parts.append("Removed (do not call):\n" + "\n".join(f"- {name}" for name in removed))
+    return "\n\n".join(parts)
+
+
 def format_rules(tools: Optional[Iterable[Dict[str, Any]]] = None,
                  code: bool = False, spoken: bool = False) -> str:
     """The ARML section of a system prompt.
@@ -69,6 +98,7 @@ RULES:
 - Nothing runs between responses. Do not announce work ("Let me check that") without doing it in the same response with a <tool>.
 - An action happens only through a <tool>. Never say you sent, saved or created something without the <tool> that does it.
 - Only the runtime writes tool results. Never write a result, event or "step done" yourself; wait for it.
+- The runtime may send a TOOLS CHANGED notice. From then on it overrides AVAILABLE TOOLS: use tools it adds, use the new name of a renamed tool, and never call a removed tool, even one you used earlier in the conversation.
 - Facts that change (the time, the date, a calendar, prices, opening hours) come from a tool result in this conversation, never from memory or earlier notes.
 - When you hand work to a tool, put everything it needs into the arguments: the place, the dates, the names you already know.
 - When a request changes (new dates, a new target), cancel or replace the work started for the old one.
