@@ -1,0 +1,476 @@
+{
+ "about": "Lessons learned and regression cases for ARML. Each lesson is a real failure, where ARML now handles it, and cases tests/test_lessons.py runs on every test run. Add a lesson when you see a new failure; remove a rule when no lesson supports it.",
+ "lessons": [
+  {
+   "id": "L01",
+   "added": "2026-10-07",
+   "source": "Voice assistant on a small home device that hands work to a coding agent; 4 days of logs, 20 sessions, 406 user turns",
+   "kind": "model",
+   "what": "A note or task block with a full stop inside was split at that full stop by a sentence splitter, read aloud, and never run. The reply still said \"On it.\"",
+   "how_often": "13 of 29 note/task blocks",
+   "enforced_by": {
+    "lint": [
+     "UNCLOSED"
+    ],
+    "stream": "rule 1: nothing is released from an opening tag until its closing tag",
+    "prompt": [
+     "Close every block you open"
+    ],
+    "harness": "a block that fails to parse must fail visibly"
+   },
+   "cases": [
+    {
+     "response": "<tool name=\"note\">{\"text\": \"Buy milk. Then eggs.\"}",
+     "expect": [
+      "UNCLOSED"
+     ]
+    },
+    {
+     "stream": [
+      "<think>Buy",
+      " milk. Then",
+      " eggs.</think>",
+      "<output>On it.</output>"
+     ],
+     "visible": "On it."
+    }
+   ]
+  },
+  {
+   "id": "L02",
+   "added": "2026-10-07",
+   "source": "Voice assistant on a small home device that hands work to a coding agent; 4 days of logs, 20 sessions, 406 user turns",
+   "kind": "model",
+   "what": "Invented a tool result (\"step 1 done: open until 10 p.m.\") before the real one came back, which said it could not confirm. The user acted on the invented one.",
+   "how_often": "1",
+   "enforced_by": {
+    "lint": [
+     "FAKE_RESULT"
+    ],
+    "prompt": [
+     "Only the runtime writes tool results"
+    ]
+   },
+   "cases": [
+    {
+     "response": "<output>Step 1 done: they are open until 10 p.m.</output>",
+     "expect": [
+      "FAKE_RESULT"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L03",
+   "added": "2026-10-07",
+   "source": "Voice assistant on a small home device that hands work to a coding agent; 4 days of logs, 20 sessions, 406 user turns",
+   "kind": "model",
+   "what": "\"Let me check your calendar\" with no calendar tool; it checked the clock instead.",
+   "how_often": "7",
+   "enforced_by": {
+    "lint": [
+     "ANNOUNCED_NO_ACTION"
+    ],
+    "prompt": [
+     "Nothing runs between responses"
+    ]
+   },
+   "cases": [
+    {
+     "response": "<output>Let me check your calendar.</output>",
+     "expect": [
+      "ANNOUNCED_NO_ACTION"
+     ]
+    },
+    {
+     "response": "<tool name=\"calendar\">{\"date\": \"2026-03-12\"}</tool>",
+     "expect_not": [
+      "ANNOUNCED_NO_ACTION"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L04",
+   "added": "2026-10-07",
+   "source": "Voice assistant on a small home device that hands work to a coding agent; 4 days of logs, 20 sessions, 406 user turns",
+   "kind": "model",
+   "what": "\"Noted.\" or \"it's in motion\" with no block behind it. Lint did not actually catch these exact phrases until 2026-11-19, though this list's earlier version said it did.",
+   "how_often": "9",
+   "enforced_by": {
+    "lint": [
+     "CLAIMED_NO_ACTION"
+    ],
+    "prompt": [
+     "An action happens only through a <tool>"
+    ]
+   },
+   "cases": [
+    {
+     "response": "<output>Noted.</output>",
+     "expect": [
+      "CLAIMED_NO_ACTION"
+     ]
+    },
+    {
+     "response": "<output>It's in motion.</output>",
+     "expect": [
+      "CLAIMED_NO_ACTION"
+     ]
+    },
+    {
+     "response": "<output>I've sent it to Dana.</output>",
+     "expect": [
+      "CLAIMED_NO_ACTION"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L05",
+   "added": "2026-10-07",
+   "source": "Voice assistant on a small home device that hands work to a coding agent; 4 days of logs, 20 sessions, 406 user turns",
+   "kind": "model",
+   "what": "Gave the time from earlier context, wrong by hours.",
+   "how_often": "3",
+   "enforced_by": {
+    "prompt": [
+     "Facts that change"
+    ],
+    "bench": "bench tasks weekday, dentist; datagen kind: facts that change"
+   }
+  },
+  {
+   "id": "L06",
+   "added": "2026-10-07",
+   "source": "Voice assistant on a small home device that hands work to a coding agent; 4 days of logs, 20 sessions, 406 user turns",
+   "kind": "model",
+   "what": "Spoken replies over 40 words or 15 seconds, and phone numbers read aloud.",
+   "how_often": "38 long, 13 with numbers",
+   "enforced_by": {
+    "lint": [
+     "LONG_SPOKEN",
+     "SPOKEN_NUMBER"
+    ],
+    "prompt": [
+     "Keep it short and natural to hear",
+     "Never read out phone numbers"
+    ]
+   },
+   "cases": [
+    {
+     "response": "<output>word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word</output>",
+     "spoken": true,
+     "expect": [
+      "LONG_SPOKEN"
+     ]
+    },
+    {
+     "response": "<output>Call them on 555 867 5309.</output>",
+     "spoken": true,
+     "expect": [
+      "SPOKEN_NUMBER"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L07",
+   "added": "2026-10-07",
+   "source": "Voice assistant on a small home device that hands work to a coding agent; 4 days of logs, 20 sessions, 406 user turns",
+   "kind": "model",
+   "what": "Answered someone else's video call: 126 turns, 31% of all turns.",
+   "how_often": "1 session",
+   "enforced_by": {
+    "prompt": [
+     "If the user is talking to someone else, answer with <output/>"
+    ],
+    "outcome": "ignored"
+   },
+   "cases": [
+    {
+     "response": "<output/>",
+     "expect_not": [
+      "EMPTY",
+      "NO_ACTION",
+      "NO_BLOCKS"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L08",
+   "added": "2026-10-07",
+   "source": "Voice assistant on a small home device that hands work to a coding agent; 4 days of logs, 20 sessions, 406 user turns",
+   "kind": "model",
+   "what": "Used the camera on filler speech and acted on garbled transcripts; the user said \"what?\" or \"not what I asked\".",
+   "how_often": "about 25 repairs",
+   "enforced_by": {
+    "prompt": [
+     "If what you heard is garbled, ask one short question"
+    ],
+    "outcome": "corrected / repeated",
+    "bench": "datagen kind: missing"
+   }
+  },
+  {
+   "id": "L09",
+   "added": "2026-10-07",
+   "source": "Voice assistant on a small home device that hands work to a coding agent; 4 days of logs, 20 sessions, 406 user turns",
+   "kind": "model",
+   "what": "A task left out the place the assistant already knew; an old task kept running after the dates changed.",
+   "how_often": "2",
+   "enforced_by": {
+    "prompt": [
+     "put everything it needs into the arguments",
+     "When a request changes"
+    ],
+    "bench": "datagen kind: chain"
+   }
+  },
+  {
+   "id": "L10",
+   "added": "2026-10-07",
+   "source": "Voice assistant on a small home device that hands work to a coding agent; 4 days of logs, 20 sessions, 406 user turns",
+   "kind": "harness",
+   "what": "Sub-agent tasks hit 900 s limits, and goals were lost on restart.",
+   "how_often": "8 failed, 6 lost",
+   "enforced_by": {
+    "harness": "persist goals somewhere that survives a restart; report failures",
+    "outcome": "tool_ok=False"
+   }
+  },
+  {
+   "id": "L11",
+   "added": "2026-11-18",
+   "source": "bench/native_vs_arml.py on qwen3:8b, gemma4 8B and gemma4 E4B (Ollama and llama.cpp), 26 tasks x 3 runs",
+   "kind": "server",
+   "what": "Gemma 4 with thinking switched off made the right native tool call, then answered the tool result with one empty token. Same on Ollama's two APIs and on llama.cpp; with thinking on it answered normally. A chat-template quirk, not a format result, but it halved native tool-calling scores.",
+   "how_often": "27 to 33 of 78 native runs per setup",
+   "enforced_by": {
+    "lint": [
+     "EMPTY"
+    ],
+    "harness": "treat an empty reply after a tool result as a failure, never as silence"
+   },
+   "cases": [
+    {
+     "response": "",
+     "expect": [
+      "EMPTY"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L12",
+   "added": "2026-11-18",
+   "source": "bench/native_vs_arml.py on qwen3:8b, gemma4 8B and gemma4 E4B (Ollama and llama.cpp), 26 tasks x 3 runs; datagen/generate.py with Qwen3.8 Flash Next as teacher, 2000 scenarios",
+   "kind": "model",
+   "what": "Qwen wrote its own native <tool_call> format: sometimes as a wrapper around a correct ARML block, sometimes instead of ARML entirely, so no call was made.",
+   "how_often": "91 of 266 failed teacher sessions",
+   "enforced_by": {
+    "lint": [
+     "STRAY_TEXT",
+     "NO_BLOCKS"
+    ],
+    "training": "strict training examples drop both"
+   },
+   "cases": [
+    {
+     "response": "<tool_call>\n<tool name=\"weather\">{\"city\": \"Oslo\"}</tool>",
+     "expect": [
+      "STRAY_TEXT"
+     ]
+    },
+    {
+     "response": "<tool_call> <function=tool> <parameter=name> current_wait </parameter> </function> </tool_call>",
+     "expect": [
+      "NO_BLOCKS"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L13",
+   "added": "2026-11-18",
+   "source": "bench/native_vs_arml.py on qwen3:8b, gemma4 8B and gemma4 E4B (Ollama and llama.cpp), 26 tasks x 3 runs",
+   "kind": "model",
+   "what": "Wrote an <output> next to its <tool>, sometimes a fill-in-the-blank answer (\"The weather is: {result}.\") before the tool had run. Lint called the turn clean, so a model trained on it would learn the habit.",
+   "how_often": "102 of 171 qwen3:8b turns (thinking off)",
+   "enforced_by": {
+    "lint": [
+     "OUTPUT_WITH_TOOL"
+    ],
+    "prompt": [
+     "No <output> in the same response as a <tool>",
+     "With a <tool>, an <output> may only acknowledge"
+    ],
+    "training": "strict=True leaves out turns with any warning"
+   },
+   "cases": [
+    {
+     "response": "<tool name=\"weather\">{\"city\": \"Lisbon\"}</tool>\n<output>The weather is: {result}.</output>",
+     "expect": [
+      "OUTPUT_WITH_TOOL"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L14",
+   "added": "2026-11-18",
+   "source": "bench/native_vs_arml.py on qwen3:8b, gemma4 8B and gemma4 E4B (Ollama and llama.cpp), 26 tasks x 3 runs",
+   "kind": "model",
+   "what": "qwen3:8b often answered in plain text with no blocks, yet got most tasks right: the decision was fine, the format was not. The core case for training small models on one format.",
+   "how_often": "27 to 28 of 78 runs",
+   "enforced_by": {
+    "lint": [
+     "NO_BLOCKS"
+    ],
+    "prompt": [
+     "Every response uses blocks"
+    ]
+   },
+   "cases": [
+    {
+     "response": "The timer has been set for 12 minutes.",
+     "expect": [
+      "NO_BLOCKS"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L15",
+   "added": "2026-11-19",
+   "source": "harness design for small local model servers",
+   "kind": "harness",
+   "what": "Changing the tools mid-conversation by rewriting the system prompt makes a local server reprocess the whole conversation, because its prompt cache only holds while the start of the prompt is unchanged. The same applies to any line at the top of the prompt that varies per request.",
+   "how_often": "every tool change",
+   "enforced_by": {
+    "lint": [
+     "FAKE_RESULT"
+    ],
+    "prompt": [
+     "TOOLS CHANGED notice"
+    ],
+    "harness": "send tools_notice(); never rewrite the system prompt",
+    "bench": "datagen kinds: removed, renamed, added"
+   },
+   "cases": [
+    {
+     "response": "<output>TOOLS CHANGED: you now have search.</output>",
+     "expect": [
+      "FAKE_RESULT"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L16",
+   "added": "2026-11-19",
+   "source": "datagen/generate.py with Qwen3.8 Flash Next as teacher, 2000 scenarios",
+   "kind": "lint",
+   "what": "CLAIMED_NO_ACTION fired on honest reports written after the tool had run (\"I've posted that to the releases channel\"), because lint looked at one response with no context. Strict training then threw those turns away.",
+   "how_often": "99 warnings in the first 2000-scenario run",
+   "enforced_by": {
+    "lint": [
+     "CLAIMED_NO_ACTION"
+    ],
+    "harness": "lint(acted=True), or TurnRecord reads it from the context"
+   },
+   "cases": [
+    {
+     "response": "<output>I've posted it to the releases channel.</output>",
+     "acted": true,
+     "expect_not": [
+      "CLAIMED_NO_ACTION"
+     ]
+    },
+    {
+     "response": "<output>I've posted it to the releases channel.</output>",
+     "expect": [
+      "CLAIMED_NO_ACTION"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L17",
+   "added": "2026-11-19",
+   "source": "spec review",
+   "kind": "spec",
+   "status": "open",
+   "what": "A block ends at the first closing tag with its name, so content holding its own closing tag (a tool argument with \"</tool>\") cuts the block short, even from a model that follows the format. Writing it as <\\/tool> already parses, since JSON reads <\\/ as </. Open: the prompt doesn't yet tell models to do that.",
+   "how_often": "not seen in logs yet",
+   "enforced_by": {
+    "prompt": [
+     "write </ inside a block as <\\/"
+    ]
+   },
+   "cases": [
+    {
+     "response": "<tool name=\"post\">{\"text\": \"use <\\/tool> here\"}</tool>",
+     "expect_not": [
+      "STRAY_CLOSE",
+      "TOOL_BAD_JSON",
+      "STRAY_TEXT"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "L18",
+   "added": "2026-11-19",
+   "source": "datagen/generate.py with Qwen3.8 Flash Next as teacher, 2000 scenarios",
+   "kind": "data",
+   "what": "The generator's checker was too strict: data keys with \"the\" (\"the airport\") failed when the model passed \"airport\", exact-match arguments rejected \"unlock\" for \"unlocked\", and vague catalog values (\"pause streaming\") made the teacher sensibly ask which one. About half of 266 failed sessions were the generator's fault.",
+   "how_often": "roughly 130 to 150 sessions",
+   "enforced_by": {
+    "tests": [
+     "test_a_leading_the_does_not_matter_and_chain_requests_read_well",
+     "test_arguments_match_by_meaning_not_by_spelling"
+    ],
+    "harness": "read failed sessions before trusting a pass rate"
+   }
+  },
+  {
+   "id": "L19",
+   "added": "2026-11-19",
+   "source": "datagen/generate.py with Qwen3.8 Flash Next as teacher, 2000 scenarios",
+   "kind": "data",
+   "what": "Logging synthetic data with the default redaction turned example email addresses into \"<email>\" in the training text, which would teach a model to write <email>.",
+   "how_often": "every email-tool example",
+   "enforced_by": {
+    "tests": [
+     "test_generate_writes_the_log_the_training_file_and_resumes"
+    ],
+    "harness": "log synthetic data with redact=None"
+   }
+  },
+  {
+   "id": "L20",
+   "added": "2026-11-18",
+   "source": "a harness resuming coding-agent sessions as follow-ups; its cost ledger",
+   "kind": "harness",
+   "what": "Each resumed follow-up re-sent the whole conversation, so every job in a chain cost more than the last: one session went from $0.02 to $1.44 a job, $9.61 over 19 jobs.",
+   "how_often": "2 sessions made up 96% of the cost",
+   "enforced_by": {
+    "harness": "cap a conversation's cost or length, then start fresh with a short note of what came before"
+   }
+  }
+ ],
+ "prompt_rules_without_a_lesson": {
+  "about": "Rules in format_rules() no lesson supports yet: keep only if a lesson or a measurement comes to back them; otherwise candidates to remove.",
+  "rules": [
+   "Only the content of <output> reaches the user",
+   "Use only tools from AVAILABLE TOOLS",
+   "Tool content is valid JSON",
+   "One <tool> per response",
+   "To mention a tag in prose, put it in backticks",
+   "When you start a task, put the <tool> first",
+   "Use a camera or screen only when the request needs it"
+  ]
+ }
+}

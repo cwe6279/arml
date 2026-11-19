@@ -74,7 +74,8 @@ _ANNOUNCE_RE = re.compile(
     r"verify|confirm|research|update|cancel|open|read|set)\b", re.IGNORECASE)
 _CLAIM_RE = re.compile(
     r"\b(?:i(?:'ve| have)?\s+(?:sent|saved|booked|scheduled|created|emailed|texted|updated|"
-    r"cancelled|canceled|added|noted|set up)|(?:it's|it is)\s+on its way)\b", re.IGNORECASE)
+    r"cancelled|canceled|added|noted|posted|set up)|(?:it's|it is)\s+on its way|"
+    r"^\s*noted\b|\bin motion\b)", re.IGNORECASE | re.MULTILINE)
 
 
 @dataclass
@@ -88,9 +89,11 @@ class Issue:
 
 
 def lint(text: str, parser: Optional[ARMLParser] = None, *, spoken: bool = False,
-         word_budget: int = 30, reserved: Optional[List[str]] = None) -> List[Issue]:
+         word_budget: int = 30, reserved: Optional[List[str]] = None, acted: bool = False) -> List[Issue]:
     """spoken: the visible text is read aloud (adds LONG_SPOKEN, SPOKEN_NUMBER).
-    reserved: extra regexes for text only your runtime writes (FAKE_RESULT)."""
+    reserved: extra regexes for text only your runtime writes (FAKE_RESULT).
+    acted: a tool already ran for this request and this response follows its result, so
+    saying what it did ("I've sent it") is a report, not a claim (no CLAIMED_NO_ACTION)."""
     p = parser or _default_parser
     if not (text or "").strip():
         return [Issue("EMPTY", "error", "no text at all")]
@@ -148,7 +151,7 @@ def lint(text: str, parser: Optional[ARMLParser] = None, *, spoken: bool = False
     if not doing and _ANNOUNCE_RE.search(visible):
         issues.append(Issue("ANNOUNCED_NO_ACTION", "warn",
                             f"announces work with no block that does it: \"{_ANNOUNCE_RE.search(visible).group(0)}\""))
-    if not doing and _CLAIM_RE.search(visible):
+    if not doing and not acted and _CLAIM_RE.search(visible):
         issues.append(Issue("CLAIMED_NO_ACTION", "warn",
                             f"claims an action with no block that does it: \"{_CLAIM_RE.search(visible).group(0)}\""))
     if spoken:

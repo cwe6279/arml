@@ -250,7 +250,7 @@ Behavior checks, from the field (section 7). They are regexes, so treat a hit as
 |---|---|---|
 | error | `FAKE_RESULT` | visible text writes what only the runtime writes: `(Event: …`, `step 1 done`, `[tool result]`. Add your harness's markers with `lint(text, reserved=[...])` |
 | warn | `ANNOUNCED_NO_ACTION` | "Let me check…" / "I'll send…" with no `<tool>`, `<code>` or `<validate>` |
-| warn | `CLAIMED_NO_ACTION` | "I've sent / saved / booked…" with no block that did it |
+| warn | `CLAIMED_NO_ACTION` | "I've sent / saved / booked…", "Noted." with no block that did it. Not raised after a tool result (`lint(acted=True)`; turn records read it from the context) |
 | warn | `LONG_SPOKEN` | `spoken=True`: more visible words than `word_budget` (30) |
 | warn | `SPOKEN_NUMBER` | `spoken=True`: a phone number or long code read aloud |
 
@@ -285,28 +285,15 @@ for response in logged_responses:
 Keep the rejected ones with their codes. They show which mistakes each model
 makes, and they are the negative examples if you ever train a format checker.
 
-## 7. Lessons from the field
+## 7. Lessons learned
 
-From a voice assistant running on a small home device, which
-has its own block syntax (`{{note …}}`, `{{task …}}`). It hands work to a coding
-agent. Four days of logs: 20 sessions, 406 user turns, scanned on 2026-10-07.
-Each lesson is now a rule in `format_rules()`, a lint check, or an outcome label.
+ARML's rules come from real failures, and each failure is kept as a test.
+[lessons/](lessons/) holds the running list: what happened, how often, what in ARML now
+handles it, and cases the tests run every time. It starts with a voice assistant's logs and
+the first benchmark and training runs, and grows as new failures turn up. A rule with no lesson
+behind it is a candidate for removal.
 
-| What happened | How often | Now in ARML |
-|---|---|---|
-| Blocks with a full stop inside were split mid-block, read aloud, and never run; the reply still said "On it." | 13 of 29 note/task blocks | Streaming rule 1; `UNCLOSED`; a dropped block must fail visibly in the harness |
-| Invented a tool result ("step 1 done: open until 10 p.m.") before the real one came back, which said it could not confirm | 1, and the user acted on it | `FAKE_RESULT`; prompt: only the runtime writes results |
-| "Let me check your calendar" with no calendar tool (checked the clock instead) | 7 | `ANNOUNCED_NO_ACTION`; prompt: nothing runs between responses |
-| "Noted." / "in motion" with no block behind it | 9 | `CLAIMED_NO_ACTION` |
-| Gave the time from earlier context, wrong by hours | 3 | prompt: changing facts come from a tool this turn |
-| Spoken replies over 40 words or 15 s, phone numbers read aloud | 38 long, 13 with numbers | `LONG_SPOKEN`, `SPOKEN_NUMBER`; spoken prompt rules |
-| Answered someone else's video call: 126 turns, 31 % of all turns | 1 session | spoken prompt: answer `<output/>` when the user talks to someone else; outcome `ignored` |
-| Used the camera on filler speech, acted on garbled transcripts; the user said "what?" or "not what I asked" | about 25 repairs | spoken prompt: ask one short question; outcome `corrected` / `repeated` |
-| A task left out the place the assistant already knew; an old task kept running after the dates changed | 2 | prompt: put known context in the arguments; cancel or replace old work |
-| Sub-agent tasks hit 900 s limits, and goals were lost on restart | 8 failed, 6 lost | harness: persist goals, report failures; outcome `tool_ok=False` |
-
-The harness lessons in the last column apply to any harness built on ARML:
-- Never speak or show a block that failed to parse; say the action failed.
+Three lessons apply to any harness built on ARML:
+- Never show or speak a block that failed to parse; say that the action failed.
 - Keep work that outlives a turn somewhere that survives a restart.
-- Record the outcome of every turn. Most of these failures were only visible
-  through the user's reaction.
+- Record the outcome of every turn. Most failures are only visible in what the user does next.

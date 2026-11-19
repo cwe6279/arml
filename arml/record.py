@@ -85,9 +85,16 @@ class TurnRecord:
                       turn: int = 0, context: Optional[List[Dict[str, str]]] = None,
                       system: Optional[str] = None, keep_system: bool = False,
                       redact: Optional[Callable[[str], str]] = basic_redact,
-                      tags: Optional[List[str]] = None, spoken: bool = False) -> "TurnRecord":
+                      tags: Optional[List[str]] = None, spoken: bool = False,
+                      acted: Optional[bool] = None) -> "TurnRecord":
+        """acted: a tool ran for this request before this response (see lint). By default it is
+        read from the context: the last message is a tool result, either in the "tool" role or a
+        runtime message starting "Result of " (the convention in examples/minimal_harness.py)."""
         clean_text = redact or (lambda s: s)
-        issues = lint(response, spoken=spoken)
+        if acted is None:
+            last = (context or [{}])[-1] if context else {}
+            acted = last.get("role") == "tool" or str(last.get("content", "")).startswith("Result of ")
+        issues = lint(response, spoken=spoken, acted=acted)
         errors = [i for i in issues if i.level == "error"]
         parsed = _default_parser.parse(response)
         return cls(
