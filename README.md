@@ -34,6 +34,9 @@ pip install git+https://github.com/cwe6279/arml.git
 
 or copy the `arml/` folder into your project. Tests: `pytest tests/`.
 
+Questions people ask first, such as why not native tool calling, and isn't regex
+fragile: [FAQ.md](FAQ.md).
+
 ## Build a harness with ARML
 
 A complete working example is [examples/minimal_harness.py](examples/minimal_harness.py):
@@ -120,6 +123,26 @@ examples = [ex for rec in read("arml-turns.jsonl")
 The outcome is what turns logs into lessons. Lint can only say a response was
 well-formed, not that it was right. A clean reply that the user cut off because
 it read its plan aloud is exactly what a small model needs to learn from.
+
+**6. When the tools change during a conversation, send a notice. Don't rewrite
+the system prompt.** A local model server (llama.cpp, Ollama, vLLM) reuses its
+prompt cache only while the start of the prompt is unchanged. Rewriting the tool
+list in the system prompt makes it reprocess the whole conversation on the next
+request. Keep the system prompt exactly as it was, and send `tools_notice()` as
+the runtime, in the same role as tool results, before the next request:
+
+```python
+from arml import tools_notice
+
+messages.append({"role": "user", "content": tools_notice(
+    added=[{"name": "search", "description": "Web search.",
+            "parameters": {"query": {"type": "string", "required": True}}}],
+    removed=["old_tool"], renamed={"get_quote": "stock_price"})})
+```
+
+`format_rules()` already tells the model that a `TOOLS CHANGED` notice overrides
+the tool list, and that a removed tool must not be called even if it was used
+earlier. A model that writes the notice itself is flagged `FAKE_RESULT`.
 
 ## Share your logs
 
