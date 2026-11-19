@@ -207,3 +207,15 @@ def test_tools_that_change_mid_conversation():
     lie = s["answer_not"][0] if s["answer_not"] else None
     if lie:
         assert not G.run_session(s, scripted(call, f"<output>It is {lie}.</output>"), "m")["passed"]
+
+
+def test_fake_lookup_finds_a_key_by_its_words_as_the_checker_does():
+    from datagen.generate import _find
+    table = {"freshcartgrocery": ("1275 points", ["freshcart", "grocery"]),
+             "blockc": ("under maintenance", ["block", "c"]), "blocka": ("working", ["block", "a"]),
+             "returnsdesk": ("8 minutes", ["returns", "desk"])}
+    assert _find(table, "FreshCart") == "1275 points"
+    assert _find(table, "C") == "under maintenance"
+    assert _find(table, "the returns desk please") == "8 minutes"
+    assert _find(table, "block") is None            # two keys match: no guessing
+    assert _find(table, "LuckyStar casino") is None  # an unknown value stays unknown

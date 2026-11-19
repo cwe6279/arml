@@ -370,10 +370,10 @@ ACTIONS: List[dict] = [
                "Open the {room} blinds to {open} percent.", "Put the {room} blinds at {open} percent."],
          result="{room} blinds {open}% open", vague="Adjust the blinds.", question="Which room, and how far open?"),
     dict(key="calendar_hold", names=["block_time", "hold_time", "create_event"],
-         desc="Put a block of time in the user's diary.",
+         desc="Put a block of time in the user's diary this week. The day is a weekday name.",
          params=[dict(key="title", names=["title", "label"], type="string", free=True,
                       pool=["deep work", "school run", "dentist", "quarterly review prep"]),
-                 dict(key="day", names=["day", "date"], type="string", pool=["Monday", "Wednesday", "Friday"]),
+                 dict(key="day", names=["day", "weekday"], type="string", pool=["Monday", "Wednesday", "Friday"]),
                  dict(key="start", names=["start", "from"], type="string", pool=["09:00", "13:30", "16:00"])],
          asks=["Block {day} at {start} for {title}.", "Put {title} in my diary on {day} at {start}.",
                "Hold {start} on {day} for {title}.", "Add {title} on {day} from {start}."],
@@ -518,6 +518,24 @@ def _norm(value: Any) -> str:
     return re.sub(r"[^a-z0-9.]+", "", text)
 
 
+def _find(table: dict, value: Any) -> Optional[str]:
+    """A fake tool's lookup, as lenient as the checker: an exact key, else the one key that
+    contains the value as whole words ("FreshCart" finds "FreshCart grocery", "C" finds
+    "Block C"), else the one key the value contains ("the returns desk please")."""
+    if _norm(value) in table:
+        return table[_norm(value)][0]
+    words = re.findall(r"[a-z0-9.]+", re.sub(r"^\s*the\s+", "", str(value).lower()))
+    hits = [k for k in table if words and _contains_words(table[k][1], words)]
+    if len(hits) != 1:
+        hits = [k for k in table if k in _norm(value)]
+    return table[hits[0]][0] if len(hits) == 1 else None
+
+
+def _contains_words(key_words: List[str], words: List[str]) -> bool:
+    n = len(words)
+    return any(key_words[i:i + n] == words for i in range(len(key_words) - n + 1))
+
+
 def _camel(name: str) -> str:
     head, *rest = name.split("_")
     return head + "".join(w.capitalize() for w in rest)
@@ -530,12 +548,12 @@ def _instantiate(rng: random.Random, concept: dict, kind: str) -> dict:
     name = style(rng.choice(concept["names"]))
     if kind == "lookup":
         pname = style(rng.choice(concept["params"]))
-        table = {_norm(k): v[0] for k, v in concept["data"].items()}
+        table = {_norm(k): (v[0], re.findall(r"[a-z0-9.]+", k.lower())) for k, v in concept["data"].items()}
 
         def run(p, table=table, pname=pname, noun=concept["noun"]):
             if pname not in p:
                 return f"error: missing parameter {pname}"
-            return table.get(_norm(p[pname])) or f"error: no {noun} data for {p[pname]!r}"
+            return _find(table, p[pname]) or f"error: no {noun} data for {p[pname]!r}"
         params = {pname: {"type": "string", "required": True}}
         return dict(concept=concept, kind=kind, name=name, desc=concept["desc"], params=params, run=run, pname=pname)
     pnames = {p["key"]: style(rng.choice(p["names"])) for p in concept["params"]}
