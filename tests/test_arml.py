@@ -241,3 +241,26 @@ def test_lint_catches_what_went_wrong_in_the_field():
 def test_deliberate_silence_is_a_valid_response():
     assert is_clean("<think>They are talking to someone else.</think><output/>")
     assert parse("<output/>").visible_text() == ""
+
+
+def test_strict_leaves_out_warnings_and_a_failed_task_is_never_good():
+    from arml.record import TurnRecord, training_example
+    early = TurnRecord.from_response('<tool name="weather">{"city": "Lisbon"}</tool>'
+                                     "<output>The weather is: {result}.</output>", model="m", harness="h")
+    early.set_outcome(tool_ok=True)
+    assert early.lint == ["OUTPUT_WITH_TOOL"] and early.clean
+    assert early.good() and not early.good(strict=True)
+    assert training_example(early) is not None and training_example(early, strict=True) is None
+    short = TurnRecord.from_response("<o>Hi.</o>", model="m", harness="h")      # info only: still strict-good
+    assert short.lint == ["SHORTHAND"] and training_example(short, strict=True) is not None
+    done = TurnRecord.from_response("<output>Sent.</output>", model="m", harness="h")
+    assert done.good(strict=True)
+    done.set_outcome(task_ok=False, note="send_message called 2 times, expected 1")
+    assert not done.good() and training_example(done) is None
+    assert done.outcome == {"task_ok": False, "note": "send_message called 2 times, expected 1"}
+
+
+def test_info_codes_match_the_lint_levels():
+    from arml.lint import INFO_CODES
+    assert [i.level for i in lint("<o>Hi.</o>") if i.code in INFO_CODES] == ["info"]
+    assert all(i.code in INFO_CODES for i in lint("<o>Hi.</o>") if i.level == "info")

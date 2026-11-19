@@ -56,6 +56,9 @@ from typing import List, Optional
 from .parser import ARMLParser, _default_parser
 from .types import BlockType, ToolBlock
 
+# Codes that only describe a response. Every other code is an error or a warning.
+INFO_CODES = {"SHORTHAND"}
+
 ACTION_TYPES = {BlockType.TOOL, BlockType.OUTPUT, BlockType.CODE, BlockType.VALIDATE, BlockType.HALT}
 DOING_TYPES = {BlockType.TOOL, BlockType.CODE, BlockType.VALIDATE}
 

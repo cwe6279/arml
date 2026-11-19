@@ -91,6 +91,9 @@ rec.set_outcome(tool_ok=True, user="accepted")   # or corrected / repeated / int
 append("arml-turns.jsonl", rec)
 ```
 
+A harness that can check the whole task, as a benchmark can, also records
+`set_outcome(task_ok=True)` or `task_ok=False` on each of that task's turns.
+
 Each line holds the response, its lint codes, its canonical form, the context
 the model saw, and the outcome. Text is redacted (emails, phone numbers, keys,
 card-like numbers) before it is written; the system prompt is kept as a hash
@@ -98,14 +101,20 @@ unless you pass `keep_system=True`.
 
 **5. Turn logs into training data.** `training_example(rec)` returns a
 chat-format example (system, context, assistant = canonical ARML) only for good
-turns: well-formed, with a tool that worked and a user who did not have to
-correct, repeat or interrupt. Keep the rest. Their lint codes and outcomes are
+turns: well-formed, with a tool that worked, a task that did not fail, and a
+user who did not have to correct, repeat or interrupt. Pass `strict=True` when
+you pick turns to train on: it also leaves out turns with a lint warning. A turn
+can be well-formed and still be a habit not to teach. In one benchmark run, 102
+of 171 turns wrote an `<output>` next to the `<tool>`, some of them a
+fill-in-the-blank answer ("The weather is: {result}.") before the tool had run.
+Keep the rest. Their lint codes and outcomes are
 the lessons: which mistakes models make, and the negative examples.
 
 ```python
 from arml.record import read, training_example
 
-examples = [ex for rec in read("arml-turns.jsonl") if (ex := training_example(rec, system=SYSTEM))]
+examples = [ex for rec in read("arml-turns.jsonl")
+            if (ex := training_example(rec, system=SYSTEM, strict=True))]
 ```
 
 The outcome is what turns logs into lessons. Lint can only say a response was

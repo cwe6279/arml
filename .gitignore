@@ -7,3 +7,5 @@ dist/
 .venv/
 venv/
 *.jsonl
+datagen/out/
+bench/results/

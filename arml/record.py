@@ -36,7 +36,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
-from .lint import canonical, lint
+from .lint import INFO_CODES, canonical, lint
 from .parser import _default_parser
 from .types import BlockType
 
@@ -106,19 +106,30 @@ class TurnRecord:
         )
 
     def set_outcome(self, *, tool_ok: Optional[bool] = None, tool_error: Optional[str] = None,
-                    user: Optional[str] = None, note: Optional[str] = None) -> "TurnRecord":
-        """What happened next: the tool's result and how the user took the response."""
+                    user: Optional[str] = None, note: Optional[str] = None,
+                    task_ok: Optional[bool] = None) -> "TurnRecord":
+        """What happened next: the tool's result, how the user took the response, and
+        (when the harness can check it, as a benchmark can) whether the whole task this
+        turn was part of came out right."""
         if user is not None and user not in USER_REACTIONS:
             raise ValueError(f"user reaction must be one of {sorted(USER_REACTIONS)}")
         for key, value in (("tool_ok", tool_ok), ("tool_error", tool_error),
-                           ("user", user), ("note", note)):
+                           ("user", user), ("note", note), ("task_ok", task_ok)):
             if value is not None:
                 self.outcome[key] = value
         return self
 
-    def good(self) -> bool:
-        """Clean, and nothing in the outcome says it went wrong."""
+    def good(self, strict: bool = False) -> bool:
+        """Clean, and nothing in the outcome says it went wrong: the tool did not fail,
+        the task did not fail, and the user did not have to correct, repeat or interrupt.
+
+        strict: also no lint warning. A response can be well-formed and still be a habit
+        not to teach, such as an <output> that answers before its <tool> has run
+        (OUTPUT_WITH_TOOL). Use strict when picking turns to train on."""
+        if strict and any(code not in INFO_CODES for code in self.lint):
+            return False
         return (self.clean and self.outcome.get("tool_ok") is not False
+                and self.outcome.get("task_ok") is not False
                 and self.outcome.get("user") not in {"corrected", "repeated", "interrupted"})
 
     def to_json(self) -> str:
@@ -139,10 +150,12 @@ def read(path: str) -> Iterator[TurnRecord]:
                     yield TurnRecord(**d)
 
 
-def training_example(record: TurnRecord, system: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def training_example(record: TurnRecord, system: Optional[str] = None,
+                     strict: bool = False) -> Optional[Dict[str, Any]]:
     """A chat-format example (system, context, assistant = canonical ARML) from a good
-    record, else None. Pass the system prompt if the record only kept its hash."""
-    if not record.good() or not record.canonical:
+    record, else None. Pass the system prompt if the record only kept its hash.
+    strict=True also leaves out turns with a lint warning (see TurnRecord.good)."""
+    if not record.good(strict) or not record.canonical:
         return None
     messages = []
     sys_text = system if system is not None else record.system
